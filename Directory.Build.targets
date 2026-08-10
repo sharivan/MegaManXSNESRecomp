@@ -136,4 +136,62 @@
     <Error Condition="!Exists('$(ProjectDir)gen\dispatch_v2.c') Or !Exists('$(ProjectDir)gen\unresolved_stubs_v2.c')"
            Text="Mega Man X generated sources are missing. From PowerShell run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\regen.ps1 usa -NoTests [-RomPath path\to\rom.smc]" />
   </Target>
+
+  <!--
+    recomp_ui.cmake stages runtime assets next to the executable. The legacy
+    Visual Studio project predates that CMake helper, so without an equivalent
+    post-link step the launcher reaches ImFontAtlas::AddFontFromFileTTF with
+    assets/fonts/*.ttf missing and Debug builds intentionally break on ImGui's
+    assertion. Mirror the CMake runtime layout here.
+
+    Support both the current assets/common/... layout and the older flat
+    assets/{fonts,img}/... layout so the target remains compatible with the
+    exact recomp-ui revision materialized by the submodule.
+  -->
+  <Target Name="StageMmxRecompUiAssets"
+          AfterTargets="Link"
+          Condition="'$(MSBuildProjectName)'=='mmx' And '$(Platform)'!='Win32'">
+    <MakeDir Directories="$(TargetDir)assets\fonts;$(TargetDir)assets\img" />
+
+    <ItemGroup>
+      <_MmxRuiFont Include="$(SolutionDir)recomp-ui\assets\common\fonts\*.ttf"
+                   Condition="Exists('$(SolutionDir)recomp-ui\assets\common\fonts')" />
+      <_MmxRuiFont Include="$(SolutionDir)recomp-ui\assets\fonts\*.ttf"
+                   Condition="Exists('$(SolutionDir)recomp-ui\assets\fonts')" />
+
+      <_MmxRuiImage Include="$(SolutionDir)recomp-ui\assets\common\img\*.tga"
+                    Condition="Exists('$(SolutionDir)recomp-ui\assets\common\img')" />
+      <_MmxRuiImage Include="$(SolutionDir)recomp-ui\assets\img\*.tga"
+                    Condition="Exists('$(SolutionDir)recomp-ui\assets\img')" />
+      <_MmxRuiImage Include="$(SolutionDir)recomp-ui\assets\consoles\snes\img\*.tga"
+                    Condition="Exists('$(SolutionDir)recomp-ui\assets\consoles\snes\img')" />
+      <_MmxRuiImage Include="$(SolutionDir)recomp-ui\assets\snes\img\*.tga"
+                    Condition="Exists('$(SolutionDir)recomp-ui\assets\snes\img')" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_MmxRuiFont)"
+          DestinationFolder="$(TargetDir)assets\fonts"
+          SkipUnchangedFiles="true"
+          Condition="'@(_MmxRuiFont)'!=''" />
+    <Copy SourceFiles="@(_MmxRuiImage)"
+          DestinationFolder="$(TargetDir)assets\img"
+          SkipUnchangedFiles="true"
+          Condition="'@(_MmxRuiImage)'!=''" />
+    <Copy SourceFiles="$(SolutionDir)recomp\launcher\boxart.tga"
+          DestinationFiles="$(TargetDir)assets\img\boxart.tga"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(SolutionDir)recomp\launcher\boxart.tga')" />
+
+    <!-- Keep the game-owned preloaded mod catalog consistent with CMake too. -->
+    <ItemGroup Condition="Exists('$(SolutionDir)mods\preloaded')">
+      <_MmxPreloadedMod Include="$(SolutionDir)mods\preloaded\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_MmxPreloadedMod)"
+          DestinationFiles="@(_MmxPreloadedMod->'$(TargetDir)mods\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_MmxPreloadedMod)'!=''" />
+
+    <Error Condition="!Exists('$(TargetDir)assets\fonts\LatoLatin-Regular.ttf')"
+           Text="recomp-ui runtime fonts were not staged. Expected LatoLatin-Regular.ttf under $(TargetDir)assets\fonts. Check the recomp-ui submodule asset layout." />
+  </Target>
 </Project>
