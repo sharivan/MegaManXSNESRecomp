@@ -48,47 +48,63 @@
     <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\cx4.c" />
 
     <!--
-      Keep the flattened legacy MSVC recomp-ui source set synchronized with
-      recomp-ui/recomp_ui.cmake. mmx.vcxproj predates these modules; compiling
-      launcher_binds/model/imgui without them produces a large but coherent
-      family of LNK2019/LNK2001 errors (console bind adapters, SHA-1, UDP port
-      helpers, runtime UI and boot timing).
+      Keep the flattened legacy MSVC recomp-ui source set synchronized with the
+      recomp-ui revision materialized by the submodule. mmx.vcxproj predates
+      several modules; compiling launcher_binds/model/imgui without the modules
+      that DO exist produces a coherent family of unresolved externals.
 
-      Give every newly-added recomp-ui translation unit the same rui_ object
-      prefix used by mmx.vcxproj, avoiding basename collisions with framework
-      sources in the single flat $(IntDir).
+      The upstream recomp-ui source list evolves independently of this game and
+      older pinned submodule revisions legitimately lack some newer translation
+      units (for example psx_pad_binds.c). Therefore each compatibility-added
+      source is conditional on Exists(). Required modules in the pinned revision
+      are compiled; newer-only modules are simply omitted instead of causing
+      C1083 before the linker can validate the actual ABI surface.
+
+      Give every added recomp-ui translation unit the same rui_ object prefix
+      used by mmx.vcxproj, avoiding basename collisions in flat $(IntDir).
     -->
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\launcher_udp_port.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\launcher_udp_port.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\common\launcher_udp_port.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\recomp_runtime_ui.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\recomp_runtime_ui.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\common\recomp_runtime_ui.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\recomp_runtime_settings.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\recomp_runtime_settings.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\common\recomp_runtime_settings.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\launcher_boot_timing.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\launcher_boot_timing.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\common\launcher_boot_timing.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\sha1.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\sha1.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\common\sha1.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\psx\psx_pad_binds.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\psx\psx_pad_binds.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\consoles\psx\psx_pad_binds.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\n64\n64_binds.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\n64\n64_binds.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\consoles\n64\n64_binds.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\nes\nes_binds.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\nes\nes_binds.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\consoles\nes\nes_binds.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\genesis\genesis_binds.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\genesis\genesis_binds.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\consoles\genesis\genesis_binds.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\gb\gb_binds.c">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\gb\gb_binds.c"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\consoles\gb\gb_binds.c')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\backends\imgui\runtime_ui_imgui.cpp">
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\backends\imgui\runtime_ui_imgui.cpp"
+               Condition="Exists('$(SolutionDir)recomp-ui\src\common\backends\imgui\runtime_ui_imgui.cpp')">
       <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
