@@ -16,7 +16,7 @@
   </ItemDefinitionGroup>
 
   <ItemGroup Condition="'$(MSBuildProjectName)'=='mmx'">
-    <!-- These two used to live beside mmx.vcxproj; they are framework-owned now. -->
+    <!-- These used to live beside mmx.vcxproj; they are framework-owned now. -->
     <ClCompile Remove="glsl_shader.c" />
     <ClCompile Remove="$(ProjectDir)glsl_shader.c" />
     <ClCompile Remove="post_mortem.c" />
@@ -32,6 +32,18 @@
     <ClInclude Include="$(SolutionDir)snesrecomp\runner\src\desktop\glsl_shader.h" />
     <ClInclude Include="$(SolutionDir)snesrecomp\runner\src\desktop\post_mortem.h" />
     <ClInclude Include="$(SolutionDir)snesrecomp\runner\src\desktop\fiber_compat.h" />
+
+    <!-- runner.cmake gained these after the original .vcxproj source list was
+         authored. Keep the MSVC harness on the same hardware/runtime set. -->
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\launcher_cache.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\launcher_picker.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\rom_image_verify.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\dsp1.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\dsp1_hle.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\joypad.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\sa1.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\tier2_capture.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\cx4.c" />
   </ItemGroup>
 
   <!-- src/gen is intentionally ROM-derived and gitignored. Fail with an
