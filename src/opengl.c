@@ -2,11 +2,22 @@
 #include "desktop/sdl_compat.h"
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include "types.h"
 #include "util.h"
 #include "glsl_shader.h"
 #include "config.h"
 #include "mmx_display.h"
+
+#ifdef _WIN32
+#define COBJMACROS
+#include <windows.h>
+#include <ddraw.h>
+#if !SNESRECOMP_SDL3
+#include <SDL_syswm.h>
+#endif
+#endif
 
 #define CODE(...) #__VA_ARGS__
 
@@ -124,6 +135,12 @@ static bool OpenGLRenderer_Init(SDL_Window *window) {
     printf("%s\n", infolog);
   }
 
+  glGetShaderiv(fs, GL_COMPILE_STATUS, &success);
+  if (!success) {
+    glGetShaderInfoLog(fs, 512, NULL, infolog);
+    printf("%s\n", infolog);
+  }
+
   // create program
   int program = g_program = glCreateProgram();
   glAttachShader(program, vs);
@@ -152,10 +169,10 @@ static void OpenGLRenderer_Destroy(void) {
 static void OpenGLRenderer_BeginDraw(int width, int height, uint8 **pixels, int *pitch) {
   int size = width * height;
 
-  if (size > g_screen_buffer_size) {
-    g_screen_buffer_size = size;
+  if ((size_t)size > g_screen_buffer_size) {
+    g_screen_buffer_size = (size_t)size;
     free(g_screen_buffer);
-    g_screen_buffer = (uint8*)malloc(size * 4);
+    g_screen_buffer = (uint8*)malloc((size_t)size * 4);
   }
 
   g_draw_width = width;
@@ -207,7 +224,6 @@ static void OpenGLRenderer_EndDraw(void) {
   SDL_GL_SwapWindow(g_window);
 }
 
-
 static const struct RendererFuncs kOpenGLRendererFuncs = {
   &OpenGLRenderer_Init,
   &OpenGLRenderer_Destroy,
@@ -216,10 +232,301 @@ static const struct RendererFuncs kOpenGLRendererFuncs = {
   &OpenGLRenderer_EndDraw,
 };
 
+#ifdef _WIN32
+/* -------------------------------------------------------------------------
+ * DirectDraw presenter
+ *
+ * DirectDraw is deliberately loaded from ddraw.dll at runtime. This keeps the
+ * existing MSVC/CMake link lines unchanged and lets modern Windows systems
+ * decide whether the compatibility implementation is available. The SNES PPU
+ * writes directly into a 32-bit system-memory DirectDraw surface; presentation
+ * is a single scaled Blt to the primary surface after vertical blank.
+ * ------------------------------------------------------------------------- */
+typedef HRESULT (WINAPI *MmxDirectDrawCreateProc)(
+    GUID FAR *guid, LPDIRECTDRAW FAR *direct_draw, IUnknown FAR *outer);
+
+static HMODULE g_ddraw_module;
+static LPDIRECTDRAW g_ddraw;
+static LPDIRECTDRAWSURFACE g_ddraw_primary;
+static LPDIRECTDRAWSURFACE g_ddraw_frame;
+static LPDIRECTDRAWCLIPPER g_ddraw_clipper;
+static HWND g_ddraw_hwnd;
+static int g_ddraw_width, g_ddraw_height;
+static bool g_ddraw_locked;
+
+static HWND DirectDrawRenderer_GetHwnd(SDL_Window *window) {
+#if SNESRECOMP_SDL3
+  SDL_PropertiesID props = SDL_GetWindowProperties(window);
+  return (HWND)SDL_GetPointerProperty(
+      props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+#else
+  SDL_SysWMinfo info;
+  SDL_VERSION(&info.version);
+  if (!SDL_GetWindowWMInfo(window, &info))
+    return NULL;
+  return info.info.win.window;
+#endif
+}
+
+static void DirectDrawRenderer_ReleaseFrame(void) {
+  if (g_ddraw_locked && g_ddraw_frame) {
+    IDirectDrawSurface_Unlock(g_ddraw_frame, NULL);
+    g_ddraw_locked = false;
+  }
+  if (g_ddraw_frame) {
+    IDirectDrawSurface_Release(g_ddraw_frame);
+    g_ddraw_frame = NULL;
+  }
+  g_ddraw_width = g_ddraw_height = 0;
+}
+
+static bool DirectDrawRenderer_CreateFrame(int width, int height) {
+  DirectDrawRenderer_ReleaseFrame();
+
+  DDSURFACEDESC desc;
+  memset(&desc, 0, sizeof(desc));
+  desc.dwSize = sizeof(desc);
+  desc.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
+  desc.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+  desc.dwWidth = (DWORD)width;
+  desc.dwHeight = (DWORD)height;
+  desc.ddpfPixelFormat.dwSize = sizeof(desc.ddpfPixelFormat);
+  desc.ddpfPixelFormat.dwFlags = DDPF_RGB;
+  desc.ddpfPixelFormat.dwRGBBitCount = 32;
+  desc.ddpfPixelFormat.dwRBitMask = 0x00ff0000;
+  desc.ddpfPixelFormat.dwGBitMask = 0x0000ff00;
+  desc.ddpfPixelFormat.dwBBitMask = 0x000000ff;
+
+  HRESULT hr = IDirectDraw_CreateSurface(
+      g_ddraw, &desc, &g_ddraw_frame, NULL);
+  if (FAILED(hr)) {
+    fprintf(stderr,
+            "DirectDraw: failed to create %dx%d X8R8G8B8 frame surface "
+            "(HRESULT=0x%08lx)\n",
+            width, height, (unsigned long)hr);
+    return false;
+  }
+
+  g_ddraw_width = width;
+  g_ddraw_height = height;
+  return true;
+}
+
+static bool DirectDrawRenderer_Init(SDL_Window *window) {
+  g_window = window;
+  g_ddraw_hwnd = DirectDrawRenderer_GetHwnd(window);
+  if (!g_ddraw_hwnd) {
+    fprintf(stderr, "DirectDraw: unable to obtain Win32 HWND from SDL: %s\n",
+            SDL_GetError());
+    return false;
+  }
+
+  g_ddraw_module = LoadLibraryA("ddraw.dll");
+  if (!g_ddraw_module) {
+    fprintf(stderr, "DirectDraw: ddraw.dll is unavailable\n");
+    return false;
+  }
+
+  MmxDirectDrawCreateProc create_ddraw =
+      (MmxDirectDrawCreateProc)GetProcAddress(g_ddraw_module, "DirectDrawCreate");
+  if (!create_ddraw) {
+    fprintf(stderr, "DirectDraw: DirectDrawCreate export is unavailable\n");
+    return false;
+  }
+
+  HRESULT hr = create_ddraw(NULL, &g_ddraw, NULL);
+  if (FAILED(hr) || !g_ddraw) {
+    fprintf(stderr, "DirectDraw: DirectDrawCreate failed (HRESULT=0x%08lx)\n",
+            (unsigned long)hr);
+    return false;
+  }
+
+  hr = IDirectDraw_SetCooperativeLevel(g_ddraw, g_ddraw_hwnd, DDSCL_NORMAL);
+  if (FAILED(hr)) {
+    fprintf(stderr,
+            "DirectDraw: SetCooperativeLevel failed (HRESULT=0x%08lx)\n",
+            (unsigned long)hr);
+    return false;
+  }
+
+  DDSURFACEDESC primary_desc;
+  memset(&primary_desc, 0, sizeof(primary_desc));
+  primary_desc.dwSize = sizeof(primary_desc);
+  primary_desc.dwFlags = DDSD_CAPS;
+  primary_desc.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+  hr = IDirectDraw_CreateSurface(
+      g_ddraw, &primary_desc, &g_ddraw_primary, NULL);
+  if (FAILED(hr)) {
+    fprintf(stderr,
+            "DirectDraw: primary surface creation failed (HRESULT=0x%08lx)\n",
+            (unsigned long)hr);
+    return false;
+  }
+
+  hr = IDirectDraw_CreateClipper(g_ddraw, 0, &g_ddraw_clipper, NULL);
+  if (SUCCEEDED(hr) && g_ddraw_clipper) {
+    IDirectDrawClipper_SetHWnd(g_ddraw_clipper, 0, g_ddraw_hwnd);
+    IDirectDrawSurface_SetClipper(g_ddraw_primary, g_ddraw_clipper);
+  }
+
+  if (g_config.shader)
+    fprintf(stderr,
+            "Warning: GLSL shaders are supported only with the OpenGL backend\n");
+  if (g_config.linear_filtering)
+    fprintf(stderr,
+            "DirectDraw: LinearFiltering is driver-defined for scaled Blt output\n");
+
+  fprintf(stderr, "DirectDraw renderer initialized (system-memory X8R8G8B8)\n");
+  return true;
+}
+
+static void DirectDrawRenderer_Destroy(void) {
+  DirectDrawRenderer_ReleaseFrame();
+  if (g_ddraw_clipper) {
+    IDirectDrawClipper_Release(g_ddraw_clipper);
+    g_ddraw_clipper = NULL;
+  }
+  if (g_ddraw_primary) {
+    IDirectDrawSurface_Release(g_ddraw_primary);
+    g_ddraw_primary = NULL;
+  }
+  if (g_ddraw) {
+    IDirectDraw_Release(g_ddraw);
+    g_ddraw = NULL;
+  }
+  if (g_ddraw_module) {
+    FreeLibrary(g_ddraw_module);
+    g_ddraw_module = NULL;
+  }
+  g_ddraw_hwnd = NULL;
+}
+
+static void DirectDrawRenderer_GetOutputSize(int *width, int *height) {
+  RECT rect;
+  if (g_ddraw_hwnd && GetClientRect(g_ddraw_hwnd, &rect)) {
+    *width = rect.right - rect.left;
+    *height = rect.bottom - rect.top;
+  } else {
+    *width = *height = 0;
+  }
+}
+
+static void DirectDrawRenderer_BeginDraw(
+    int width, int height, uint8 **pixels, int *pitch) {
+  if (!g_ddraw_frame || width != g_ddraw_width || height != g_ddraw_height) {
+    if (!DirectDrawRenderer_CreateFrame(width, height))
+      Die("DirectDraw framebuffer creation failed");
+  }
+
+  DDSURFACEDESC desc;
+  memset(&desc, 0, sizeof(desc));
+  desc.dwSize = sizeof(desc);
+  HRESULT hr = IDirectDrawSurface_Lock(
+      g_ddraw_frame, NULL, &desc, DDLOCK_WAIT, NULL);
+  if (hr == DDERR_SURFACELOST) {
+    IDirectDrawSurface_Restore(g_ddraw_frame);
+    hr = IDirectDrawSurface_Lock(
+        g_ddraw_frame, NULL, &desc, DDLOCK_WAIT, NULL);
+  }
+  if (FAILED(hr) || !desc.lpSurface)
+    Die("DirectDraw framebuffer lock failed");
+
+  g_ddraw_locked = true;
+  g_draw_width = width;
+  g_draw_height = height;
+  *pixels = (uint8 *)desc.lpSurface;
+  *pitch = (int)desc.lPitch;
+}
+
+static void DirectDrawRenderer_EndDraw(void) {
+  if (!g_ddraw_frame || !g_ddraw_primary)
+    return;
+
+  if (g_ddraw_locked) {
+    IDirectDrawSurface_Unlock(g_ddraw_frame, NULL);
+    g_ddraw_locked = false;
+  }
+
+  RECT client;
+  if (!GetClientRect(g_ddraw_hwnd, &client))
+    return;
+  int output_width = client.right - client.left;
+  int output_height = client.bottom - client.top;
+  if (output_width <= 0 || output_height <= 0)
+    return;
+
+  POINT origin = {0, 0};
+  ClientToScreen(g_ddraw_hwnd, &origin);
+  RECT output_rect = {
+      origin.x, origin.y, origin.x + output_width, origin.y + output_height};
+
+  MmxDisplayViewport viewport;
+  MmxDisplay_ComputeViewport(g_draw_width, g_draw_height,
+                             output_width, output_height,
+                             SnesDisplayAspect_Clamp(g_config.display_aspect),
+                             g_config.ignore_aspect_ratio, false,
+                             &viewport);
+  RECT dest = {
+      origin.x + viewport.x,
+      origin.y + viewport.y,
+      origin.x + viewport.x + viewport.width,
+      origin.y + viewport.y + viewport.height};
+  RECT src = {0, 0, g_draw_width, g_draw_height};
+
+  DDBLTFX fill;
+  memset(&fill, 0, sizeof(fill));
+  fill.dwSize = sizeof(fill);
+  fill.dwFillColor = 0;
+  HRESULT hr = IDirectDrawSurface_Blt(
+      g_ddraw_primary, &output_rect, NULL, NULL,
+      DDBLT_COLORFILL | DDBLT_WAIT, &fill);
+  if (hr == DDERR_SURFACELOST) {
+    IDirectDrawSurface_Restore(g_ddraw_primary);
+    IDirectDrawSurface_Restore(g_ddraw_frame);
+    IDirectDrawSurface_Blt(
+        g_ddraw_primary, &output_rect, NULL, NULL,
+        DDBLT_COLORFILL | DDBLT_WAIT, &fill);
+  }
+
+  if (g_benchmark_frames == 0)
+    IDirectDraw_WaitForVerticalBlank(g_ddraw, DDWAITVB_BLOCKBEGIN, NULL);
+
+  hr = IDirectDrawSurface_Blt(
+      g_ddraw_primary, &dest, g_ddraw_frame, &src, DDBLT_WAIT, NULL);
+  if (hr == DDERR_SURFACELOST) {
+    IDirectDrawSurface_Restore(g_ddraw_primary);
+    IDirectDrawSurface_Restore(g_ddraw_frame);
+    hr = IDirectDrawSurface_Blt(
+        g_ddraw_primary, &dest, g_ddraw_frame, &src, DDBLT_WAIT, NULL);
+  }
+  if (FAILED(hr) && kDebugFlag) {
+    fprintf(stderr, "DirectDraw: Blt failed (HRESULT=0x%08lx)\n",
+            (unsigned long)hr);
+  }
+}
+
+static const struct RendererFuncs kDirectDrawRendererFuncs = {
+  &DirectDrawRenderer_Init,
+  &DirectDrawRenderer_Destroy,
+  &DirectDrawRenderer_GetOutputSize,
+  &DirectDrawRenderer_BeginDraw,
+  &DirectDrawRenderer_EndDraw,
+};
+#endif
+
 void OpenGLRenderer_Create(struct RendererFuncs *funcs) {
+  if (MmxHostRenderer_IsDirectDraw()) {
+#ifdef _WIN32
+    *funcs = kDirectDrawRendererFuncs;
+    return;
+#else
+    fprintf(stderr,
+            "Warning: DirectDraw is Windows-only; falling back to OpenGL\n");
+#endif
+  }
+
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
   *funcs = kOpenGLRendererFuncs;
 }
-

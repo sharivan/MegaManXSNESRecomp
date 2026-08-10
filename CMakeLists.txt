@@ -83,6 +83,7 @@ function(add_mmx_variant TARGET GEN_DIR CFG_INCLUDE_DIR)
         ${SNESRECOMP_RUNNER_SOURCES}
         # game-specific runtime (shared across both variants)
         src/mmx_display.c
+        src/config.c
         src/main.c
         src/mmx_wide_preview.c
         src/mmx_wide_policy.c
