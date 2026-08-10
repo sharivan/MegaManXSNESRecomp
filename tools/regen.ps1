@@ -54,7 +54,8 @@ function Invoke-Python {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
     & $Python @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "Python command failed with exit code $LASTEXITCODE: $Python $($Arguments -join ' ')"
+        $exitCode = $LASTEXITCODE
+        throw ("Python command failed with exit code {0}: {1} {2}" -f $exitCode, $Python, ($Arguments -join ' '))
     }
 }
 
