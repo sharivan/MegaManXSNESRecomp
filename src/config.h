@@ -23,9 +23,12 @@ typedef enum MmxHostRendererBackend {
 
 void MmxParseConfigFile(const char *filename);
 MmxHostRendererBackend MmxHostRenderer_GetBackend(void);
+void MmxHostRenderer_SetBackend(MmxHostRendererBackend backend);
 const char *MmxHostRenderer_GetName(void);
+const char *MmxHostRenderer_GetConfigValue(void);
 const char *MmxHostRenderer_GetSdlDriverName(void);
 bool MmxHostRenderer_IsDirectDraw(void);
+void MmxHostRenderer_PersistConfig(const char *filename);
 
 /* main.c owns benchmark mode; explicit presenters use it to suppress VSync so
  * renderer benchmarks measure throughput instead of refresh cadence. */
