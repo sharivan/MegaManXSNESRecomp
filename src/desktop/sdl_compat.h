@@ -8,7 +8,17 @@
 #include "../../snesrecomp/runner/src/desktop/sdl_compat.h"
 #include "../config.h"
 
+#include <stdio.h>
 #include <string.h>
+
+static inline void mmx_sdl_log_explicit_renderer(
+    SDL_Renderer *renderer, const char *requested) {
+  if (!renderer || !requested)
+    return;
+  const char *actual = snesrecomp_sdl_renderer_name(renderer);
+  fprintf(stderr, "SDL renderer requested=%s actual=%s\n",
+          requested, actual ? actual : "(unknown)");
+}
 
 static inline SDL_Renderer *mmx_sdl_create_renderer(
     SDL_Window *window, bool software, bool vsync) {
@@ -18,10 +28,14 @@ static inline SDL_Renderer *mmx_sdl_create_renderer(
   SDL_Renderer *renderer = SDL_CreateRenderer(window, driver);
   if (renderer && !software)
     SDL_SetRenderVSync(renderer, vsync ? 1 : 0);
+  mmx_sdl_log_explicit_renderer(renderer, driver);
   return renderer;
 #else
   if (software) {
-    return SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    SDL_Renderer *renderer =
+        SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    mmx_sdl_log_explicit_renderer(renderer, driver);
+    return renderer;
   }
 
   int driver_index = -1;
@@ -42,9 +56,11 @@ static inline SDL_Renderer *mmx_sdl_create_renderer(
     }
   }
 
-  return SDL_CreateRenderer(
+  SDL_Renderer *renderer = SDL_CreateRenderer(
       window, driver_index,
       SDL_RENDERER_ACCELERATED | (vsync ? SDL_RENDERER_PRESENTVSYNC : 0));
+  mmx_sdl_log_explicit_renderer(renderer, driver);
+  return renderer;
 #endif
 }
 
