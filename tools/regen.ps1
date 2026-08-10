@@ -6,6 +6,11 @@ param(
     [ValidateSet('usa', 'jp', 'all')]
     [string]$Variant = 'usa',
 
+    # Optional explicit ROM path. A relative path is resolved from the shell's
+    # current directory before the script changes to the repository root.
+    [Parameter(Position = 1)]
+    [string]$RomPath,
+
     [switch]$NoTests,
     [switch]$StrictIdempotent,
 
@@ -25,6 +30,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+
+if ($Variant -eq 'all' -and $RomPath) {
+    throw '-RomPath cannot be used with variant all; provide the default USA/JP ROM locations instead.'
+}
+
+$ResolvedRomPath = $null
+if ($RomPath) {
+    $ResolvedRomPath = (Resolve-Path -LiteralPath $RomPath -ErrorAction Stop).Path
+}
 
 function Find-Python {
     foreach ($name in @('py', 'python', 'python3')) {
@@ -51,13 +65,13 @@ function Step([string]$Text) {
 
 function Invoke-RegenVariant([string]$Name) {
     if ($Name -eq 'usa') {
-        $rom = 'mmx.sfc'
+        $rom = if ($ResolvedRomPath) { $ResolvedRomPath } else { 'mmx.sfc' }
         $cfgDir = 'recomp'
         $outDir = 'src/gen'
         $funcsH = 'recomp/funcs.h'
         $extra = @('--profile-manifest', 'recomp/tier2_coverage.json')
     } else {
-        $rom = 'variants/jp/roms/rockmanx.sfc'
+        $rom = if ($ResolvedRomPath) { $ResolvedRomPath } else { 'variants/jp/roms/rockmanx.sfc' }
         $cfgDir = 'variants/jp/config'
         $outDir = 'variants/jp/gen'
         $funcsH = 'variants/jp/config/funcs.h'
@@ -65,10 +79,10 @@ function Invoke-RegenVariant([string]$Name) {
     }
 
     if (-not (Test-Path -LiteralPath $rom -PathType Leaf)) {
-        throw "$rom not found. Stage the verified $Name ROM first."
+        throw "$rom not found. Stage the verified $Name ROM first or pass -RomPath <file>."
     }
 
-    Step "Regenerating $Name banks"
+    Step "Regenerating $Name banks from $rom"
     $emitArgs = @(
         "$SnesrecompRoot/tools/v2_emit.py",
         '--rom', $rom,
