@@ -22,6 +22,7 @@ typedef enum MmxHostRendererBackend {
 } MmxHostRendererBackend;
 
 void MmxParseConfigFile(const char *filename);
+void MmxWriteConfigFile(const char *filename);
 MmxHostRendererBackend MmxHostRenderer_GetBackend(void);
 void MmxHostRenderer_SetBackend(MmxHostRendererBackend backend);
 const char *MmxHostRenderer_GetName(void);
@@ -35,8 +36,9 @@ void MmxHostRenderer_PersistConfig(const char *filename);
 extern int g_benchmark_frames;
 
 /* main.c intentionally stays on the shared framework API. Redirect its parser
- * call to the game-local wrapper unless this translation unit is implementing
- * that wrapper and needs the original framework symbol. */
+ * and writer calls to the game-local wrappers unless this translation unit is
+ * implementing those wrappers and needs the original framework symbols. */
 #ifndef MMX_CONFIG_IMPLEMENTATION
 #define ParseConfigFile MmxParseConfigFile
+#define WriteConfigFile MmxWriteConfigFile
 #endif
