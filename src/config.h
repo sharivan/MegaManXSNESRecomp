@@ -27,6 +27,10 @@ const char *MmxHostRenderer_GetName(void);
 const char *MmxHostRenderer_GetSdlDriverName(void);
 bool MmxHostRenderer_IsDirectDraw(void);
 
+/* main.c owns benchmark mode; explicit presenters use it to suppress VSync so
+ * renderer benchmarks measure throughput instead of refresh cadence. */
+extern int g_benchmark_frames;
+
 /* main.c intentionally stays on the shared framework API. Redirect its parser
  * call to the game-local wrapper unless this translation unit is implementing
  * that wrapper and needs the original framework symbol. */
