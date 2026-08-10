@@ -2,14 +2,24 @@
 
 MegaManXSNESRecomp renders the SNES PPU into a 32-bit CPU framebuffer and then presents that framebuffer through a selectable host graphics API.
 
-Set `OutputMethod` in the `[Graphics]` section of `config.ini`:
+The pre-boot launcher's **Settings** page exposes the available host renderers. On Windows the list is:
+
+- SDL (Auto)
+- SDL Software
+- OpenGL
+- Direct3D 9
+- Direct3D 11
+- DirectDraw
+- Vulkan
+
+The selected value is persisted to `OutputMethod` in the `[Graphics]` section of `config.ini`. It can also be edited manually:
 
 ```ini
 [Graphics]
 OutputMethod = Direct3D11
 ```
 
-Supported values are:
+Supported config values are:
 
 | Value | Presentation path | Platform notes |
 | --- | --- | --- |
@@ -23,13 +33,15 @@ Supported values are:
 
 `D3D9`/`Direct3D` and `D3D11` are accepted aliases. `Software`, `Auto`, `SDL-Auto`, and `DDraw` are also accepted.
 
+On non-Windows builds the launcher hides the Windows-only Direct3D and DirectDraw choices and offers SDL Auto, SDL Software, OpenGL, and Vulkan.
+
 ## Behavior shared by all backends
 
 The PPU renderer itself is unchanged. All host backends consume the same ARGB8888 framebuffer, so the old/new PPU renderer toggle, no-sprite-limits mode, experimental widescreen rendering, display-aspect selection, fullscreen/window resizing, and save-state behavior are independent of the host graphics API.
 
-The SDL-backed Direct3D/Vulkan paths use the same streaming texture path as the existing SDL renderer, including nearest/linear filtering and VSync. Benchmark mode disables SDL VSync as before.
+The SDL-backed Direct3D/Vulkan paths use the same streaming texture path as the existing SDL renderer, including nearest/linear filtering and VSync.
 
-The DirectDraw path locks a 32-bit system-memory offscreen surface and lets the PPU write into it directly. It then clears the client area, computes the same aspect-correct viewport used by OpenGL/SDL, waits for vertical blank outside benchmark mode, and performs a scaled `Blt` to the primary surface. DirectDraw scaling/filtering quality is driver-defined; GLSL shaders remain OpenGL-only.
+The DirectDraw path locks a 32-bit system-memory offscreen surface and lets the PPU write into it directly. It then clears the client area, computes the same aspect-correct viewport used by OpenGL/SDL, waits for vertical blank during normal gameplay, and performs a scaled `Blt` to the primary surface. DirectDraw scaling/filtering quality is driver-defined; GLSL shaders remain OpenGL-only.
 
 ## SDL2 fallback
 
