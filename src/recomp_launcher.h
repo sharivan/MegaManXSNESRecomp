@@ -9,6 +9,7 @@
 
 #include "../recomp-ui/src/recomp_launcher.h"
 #include "config.h"
+#include <stdio.h>
 
 static inline int MmxLauncherRendererIndex(MmxHostRendererBackend backend) {
 #ifdef _WIN32
@@ -70,14 +71,25 @@ static inline int MmxRecompLauncherRunWindow(
     launcher_game = &game_copy;
   }
 
-  if (io)
+  if (io) {
     io->renderer = MmxLauncherRendererIndex(MmxHostRenderer_GetBackend());
+    fprintf(stderr,
+            "Launcher renderer seed: backend=%s index=%d legacy_output=%d config=%s\n",
+            MmxHostRenderer_GetName(), io->renderer, io->output_method,
+            (game && game->config_path) ? game->config_path : "(default)");
+  }
 
   /* This name still denotes recomp-ui's real function here. The macro redirect
    * is intentionally declared only after this wrapper definition. */
   int result = recomp_launcher_run_window(
       window_title, io, launcher_game, assets_dir, initial_rom,
       out_rom_path, out_rom_path_len);
+
+  if (io) {
+    fprintf(stderr,
+            "Launcher renderer return: result=%d index=%d legacy_output=%d\n",
+            result, io->renderer, io->output_method);
+  }
 
   if (io && (result == RECOMP_LAUNCHER_RESULT_LAUNCH ||
              result == RECOMP_LAUNCHER_RESULT_RELAUNCH)) {
@@ -87,6 +99,9 @@ static inline int MmxRecompLauncherRunWindow(
      * selection so DirectDraw still takes the explicit-renderer factory route
      * and D3D/Vulkan still take the SDL route. */
     io->output_method = g_config.output_method;
+    fprintf(stderr,
+            "Launcher renderer applied: backend=%s index=%d route=%d\n",
+            MmxHostRenderer_GetName(), io->renderer, io->output_method);
     MmxHostRenderer_PersistConfig(game ? game->config_path : NULL);
   }
 
