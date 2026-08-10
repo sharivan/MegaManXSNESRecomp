@@ -1,0 +1,45 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Keep the legacy Visual Studio/MSVC harness aligned with runner.cmake.
+    Directory.Build.targets is imported after the .vcxproj, so it can repair
+    stale item paths without duplicating the entire project file.
+  -->
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)'=='mmx'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)snesrecomp\runner\src\desktop;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ForcedIncludeFiles>$(SolutionDir)src\msvc_host_compat.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <PreprocessorDefinitions>SNESRECOMP_POST_MORTEM_TIER2=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)'=='mmx'">
+    <!-- These two used to live beside mmx.vcxproj; they are framework-owned now. -->
+    <ClCompile Remove="glsl_shader.c" />
+    <ClCompile Remove="$(ProjectDir)glsl_shader.c" />
+    <ClCompile Remove="post_mortem.c" />
+    <ClCompile Remove="$(ProjectDir)post_mortem.c" />
+    <ClInclude Remove="glsl_shader.h" />
+    <ClInclude Remove="$(ProjectDir)glsl_shader.h" />
+
+    <!-- Mirror snesrecomp_target_{mmx_config,glsl_shader,post_mortem,fiber_compat}. -->
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\desktop\mmx_config.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\desktop\glsl_shader.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\desktop\post_mortem.c" />
+    <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\desktop\fiber_compat.c" />
+    <ClInclude Include="$(SolutionDir)snesrecomp\runner\src\desktop\glsl_shader.h" />
+    <ClInclude Include="$(SolutionDir)snesrecomp\runner\src\desktop\post_mortem.h" />
+    <ClInclude Include="$(SolutionDir)snesrecomp\runner\src\desktop\fiber_compat.h" />
+  </ItemGroup>
+
+  <!-- src/gen is intentionally ROM-derived and gitignored. Fail with an
+       actionable message instead of a cascade of C1083 errors. -->
+  <Target Name="EnsureMmxGeneratedSources"
+          BeforeTargets="ClCompile"
+          Condition="'$(MSBuildProjectName)'=='mmx'">
+    <Error Condition="!Exists('$(ProjectDir)gen\dispatch_v2.c') Or !Exists('$(ProjectDir)gen\unresolved_stubs_v2.c')"
+           Text="Mega Man X generated sources are missing. Stage your legally obtained USA Rev 1 ROM as mmx.sfc, then run: bash tools/bootstrap.sh &amp;&amp; bash tools/regen.sh usa --no-tests" />
+  </Target>
+</Project>
