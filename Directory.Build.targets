@@ -1,8 +1,9 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <!--
-    Keep the legacy Visual Studio/MSVC harness aligned with runner.cmake.
-    Directory.Build.targets is imported after the .vcxproj, so it can repair
-    stale item paths without duplicating the entire project file.
+    Keep the legacy Visual Studio/MSVC harness aligned with runner.cmake and
+    recomp-ui/recomp_ui.cmake. Directory.Build.targets is imported after the
+    .vcxproj, so it can repair stale item paths without duplicating the whole
+    project file.
   -->
   <ItemDefinitionGroup Condition="'$(MSBuildProjectName)'=='mmx'">
     <ClCompile>
@@ -11,7 +12,8 @@
       <PreprocessorDefinitions>SNESRECOMP_POST_MORTEM_TIER2=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <!-- dbghelp: post-mortem support. ws2_32: recomp-ui launcher_udp_port.c. -->
+      <AdditionalDependencies>dbghelp.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -45,17 +47,63 @@
     <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\tier2_capture.c" />
     <ClCompile Include="$(SolutionDir)snesrecomp\runner\src\snes\cx4.c" />
 
-    <!-- The game has a local src/recomp_launcher.h wrapper.  The flattened
+    <!--
+      Keep the flattened legacy MSVC recomp-ui source set synchronized with
+      recomp-ui/recomp_ui.cmake. mmx.vcxproj predates these modules; compiling
+      launcher_binds/model/imgui without them produces a large but coherent
+      family of LNK2019/LNK2001 errors (console bind adapters, SHA-1, UDP port
+      helpers, runtime UI and boot timing).
+
+      Give every newly-added recomp-ui translation unit the same rui_ object
+      prefix used by mmx.vcxproj, avoiding basename collisions with framework
+      sources in the single flat $(IntDir).
+    -->
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\launcher_udp_port.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\recomp_runtime_ui.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\recomp_runtime_settings.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\launcher_boot_timing.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\sha1.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\psx\psx_pad_binds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\n64\n64_binds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\nes\nes_binds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\genesis\genesis_binds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\consoles\gb\gb_binds.c">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(SolutionDir)recomp-ui\src\common\backends\imgui\runtime_ui_imgui.cpp">
+      <ObjectFileName>$(IntDir)rui_%(Filename).obj</ObjectFileName>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+
+    <!-- The game has a local src/recomp_launcher.h wrapper. The flattened
          legacy MSVC project also compiles recomp-ui's own C sources, and its
          launcher_ng_capi.c must resolve "recomp_launcher.h" to recomp-ui's
-         public ABI header rather than the game wrapper.  CMake naturally keeps
+         public ABI header rather than the game wrapper. CMake naturally keeps
          these target include scopes separate; reproduce that isolation here. -->
     <ClCompile Update="..\recomp-ui\src\common\launcher_ng_capi.c">
       <AdditionalIncludeDirectories>$(SolutionDir)recomp-ui\src;$(SolutionDir)recomp-ui\src\common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
 
     <!-- v2_emit deliberately materializes labels for every proven guest-PC
-         entry point.  Many are not the target of a C goto in a particular
+         entry point. Many are not the target of a C goto in a particular
          emitted variant, so MSVC reports thousands of benign C4102 warnings.
          Silence that diagnostic only for ROM-derived generated C; keep the
          warning enabled for handwritten/framework code. -->
