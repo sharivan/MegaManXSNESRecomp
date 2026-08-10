@@ -22,7 +22,6 @@ typedef enum MmxHostRendererBackend {
 } MmxHostRendererBackend;
 
 void MmxParseConfigFile(const char *filename);
-void MmxWriteConfigFile(const char *filename);
 MmxHostRendererBackend MmxHostRenderer_GetBackend(void);
 void MmxHostRenderer_SetBackend(MmxHostRendererBackend backend);
 const char *MmxHostRenderer_GetName(void);
@@ -37,8 +36,17 @@ extern int g_benchmark_frames;
 
 /* main.c intentionally stays on the shared framework API. Redirect its parser
  * and writer calls to the game-local wrappers unless this translation unit is
- * implementing those wrappers and needs the original framework symbols. */
+ * implementing those wrappers and needs the original framework symbols.
+ *
+ * The write wrapper is important: snesrecomp's legacy writer necessarily
+ * serializes D3D9/D3D11/Vulkan as SDL and DirectDraw as OpenGL because its ABI
+ * only knows three OutputMethod values. Patch the richer value back in only
+ * AFTER the legacy writer has persisted all of the other launcher settings. */
 #ifndef MMX_CONFIG_IMPLEMENTATION
+static inline void MmxWriteConfigFile(const char *filename) {
+  WriteConfigFile(filename);
+  MmxHostRenderer_PersistConfig(filename);
+}
 #define ParseConfigFile MmxParseConfigFile
 #define WriteConfigFile MmxWriteConfigFile
 #endif
